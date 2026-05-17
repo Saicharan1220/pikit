@@ -1,0 +1,296 @@
+# ===================================================================
+# SPRING BOOT APPLICATION CONFIGURATION
+# ===================================================================
+# Purpose: Centralized configuration for REST API, database, logging,
+#          and monitoring. Demonstrates production-grade setup.
+# ===================================================================
+
+spring:
+  application:
+    name: meal-preorder-system
+  
+  # ===== DATABASE CONFIGURATION =====
+  datasource:
+    # PostgreSQL connection - Production database
+    url: jdbc:postgresql://localhost:5432/mealorder_db
+    username: postgres
+    password: postgres
+    driver-class-name: org.postgresql.Driver
+    
+    # Connection Pool Configuration (HikariCP - included with Spring Boot)
+    # Decision: HikariCP is faster than Tomcat/DBCP; minimal memory footprint
+    hikari:
+      maximum-pool-size: 20
+      # Explanation: 20 connections for typical development
+      # Production: Adjust based on: concurrent_users * avg_query_time_ms / 1000
+      # For 5K users with 100ms avg query: (5000 * 100) / 1000 = 500 connections needed
+      
+      minimum-idle: 5
+      # Explanation: Keep 5 idle connections to avoid connection creation latency
+      
+      connection-timeout: 30000
+      # Explanation: 30 seconds to acquire connection from pool before timeout
+      
+      idle-timeout: 600000
+      # Explanation: Close idle connections after 10 minutes (600000ms)
+      
+      auto-commit: true
+      # Explanation: Let Spring/Hibernate manage transactions explicitly
+  
+  # ===== JPA/HIBERNATE CONFIGURATION =====
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    # Explanation: Uses PostgreSQL-specific optimizations (JSONB, array types, etc.)
+    
+    hibernate:
+      ddl-auto: validate
+      # Explanation: "validate" = don't auto-create schema; use Flyway instead
+      # This prevents accidental schema changes in production
+      
+    show-sql: false
+    # Explanation: Don't log SQL (use Hibernate logs instead with DEBUG level)
+    
+    properties:
+      hibernate:
+        format_sql: true
+        # When DEBUG logging is enabled, format SQL for readability
+        
+        jdbc:
+          batch_size: 20
+          # Explanation: Group 20 INSERT/UPDATE statements into single batch
+          # Reduces DB round trips by 95%
+          
+          fetch_size: 50
+          # Explanation: Fetch 50 rows at a time from result set
+          
+        order_inserts: true
+        order_updates: true
+        # Explanation: Sort DML statements for better DB execution plans
+  
+  # ===== FLYWAY DATABASE MIGRATION =====
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # Explanation: SQL migration files in src/main/resources/db/migration/
+    # Naming: V1__initial_schema.sql, V2__add_orders_table.sql, etc.
+    
+    baseline-on-migrate: true
+    # Explanation: Create baseline if no schema_version table exists
+  
+  # ===== SERVER CONFIGURATION =====
+  server:
+    servlet:
+      context-path: /api/v1
+      # Explanation: All endpoints prefixed with /api/v1 (e.g., /api/v1/orders)
+      # Allows future /api/v2 without breaking clients
+    
+    compression:
+      enabled: true
+      min-response-size: 1024
+      # Explanation: Compress responses > 1KB (GZIP); reduces bandwidth by 70-80%
+    
+    port: 8080
+  
+  # ===== JACKSON JSON CONFIGURATION =====
+  jackson:
+    default-property-inclusion: non_null
+    # Explanation: Don't serialize null fields (cleaner JSON responses)
+    
+    serialization:
+      write-dates-as-timestamps: false
+      # Explanation: Serialize LocalDateTime as "2026-05-17T10:30:00" not epoch
+    
+    deserialization:
+      fail-on-unknown-properties: false
+      # Explanation: Ignore unknown JSON properties (forward compatibility)
+  
+  # ===== VALIDATION =====
+  validation:
+    enabled: true
+
+# ===================================================================
+# ACTUATOR ENDPOINTS (Monitoring & Health)
+# ===================================================================
+# Purpose: Expose metrics, health, and operational endpoints
+# Endpoints: http://localhost:8080/api/v1/actuator/*
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,info,prometheus,threaddump,heapdump
+        # Explanation:
+        # - health: Application health status
+        # - metrics: Custom metrics (order count, response time)
+        # - prometheus: Metrics in Prometheus format for scraping
+        # - info: Application version, build info
+        # - threaddump: Thread state (debugging deadlocks)
+        # - heapdump: Memory dump for analyzing memory leaks
+      base-path: /actuator
+      # All monitoring endpoints at /api/v1/actuator/health, etc.
+  
+  endpoint:
+    health:
+      show-details: when-authorized
+      # Explanation: Show detailed health (DB status, disk space, etc.) only if authorized
+      # Security consideration: Don't expose sensitive info to anonymous users
+    
+    metrics:
+      enabled: true
+  
+  # ===== METRICS CONFIGURATION =====
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    
+    tags:
+      application: meal-preorder-system
+      environment: dev
+      # Explanation: All metrics tagged with app name and environment
+      # Useful for filtering in Prometheus/Grafana dashboards
+    
+    # Custom metric prefixes
+    web:
+      server:
+        request:
+          autotime:
+            enabled: true
+            # Explanation: Automatically track HTTP request duration (p50, p95, p99)
+
+# ===================================================================
+# LOGGING CONFIGURATION
+# ===================================================================
+# Purpose: Structured logging for debugging and monitoring
+
+logging:
+  level:
+    root: INFO
+    # Default level for all packages
+    
+    com.mealorder: DEBUG
+    # Decision: Log our package at DEBUG (more details)
+    # In production: Switch to INFO
+    
+    org.springframework.web: DEBUG
+    # Log Spring Web framework at DEBUG level (show request/response headers)
+    
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+    # Explanation: Log SQL queries and their parameters
+    # BasicBinder shows ? replaced with actual values
+    # In production: Disable or set to WARN (sensitive data in SQL params)
+  
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    # Simple format for console
+    
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    # Detailed format for files
+  
+  file:
+    name: logs/meal-preorder.log
+    max-size: 10MB
+    max-history: 30
+    # Explanation: Keep logs max 10MB, rotate daily, keep 30 days of backups
+    # Prevents disk space exhaustion
+
+# ===================================================================
+# SPRINGDOC-OPENAPI (SWAGGER) CONFIGURATION
+# ===================================================================
+# Purpose: Auto-generate API documentation
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    # OpenAPI spec at /api/v1/v3/api-docs (JSON format)
+  
+  swagger-ui:
+    path: /swagger-ui.html
+    # Interactive Swagger UI at /api/v1/swagger-ui.html
+    enabled: true
+    operations-sorter: method
+    # Sort operations by HTTP method (GET, POST, etc.)
+  
+  show-actuator: true
+  # Include actuator endpoints in Swagger documentation
+
+# ===================================================================
+# RESILIENCE4J CONFIGURATION
+# ===================================================================
+# Purpose: Fault tolerance patterns (Circuit Breaker, Retry, Timeout)
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        register-health-indicator: true
+        sliding-window-size: 100
+        # Track last 100 calls for failure rate calculation
+        
+        failure-rate-threshold: 50
+        # Trip circuit if 50% of recent calls fail
+        
+        slow-call-rate-threshold: 50
+        slow-call-duration-threshold: 2000
+        # Trip circuit if 50% of calls take >2 seconds
+        
+        wait-duration-in-open-state: 30000
+        # Wait 30 seconds before attempting to close circuit
+  
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        # Retry failed requests up to 3 times
+        
+        wait-duration: 1000
+        # Wait 1 second between retries
+        
+        retry-exceptions:
+          - java.io.IOException
+          - org.springframework.web.client.HttpServerErrorException
+        # Only retry on temporary errors (not 4xx client errors)
+
+---
+# ===================================================================
+# PRODUCTION PROFILE (application-prod.yml)
+# ===================================================================
+# Activate with: java -jar app.jar --spring.profiles.active=prod
+
+spring:
+  config:
+    activate:
+      on-profile: prod
+  
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  
+  datasource:
+    hikari:
+      maximum-pool-size: 100
+      # Production: More connections for higher concurrency
+
+logging:
+  level:
+    root: WARN
+    # Production: Less verbose logging
+    com.mealorder: INFO
+    # Only log important application events
+  
+  file:
+    max-history: 90
+    # Production: Keep 90 days of logs for compliance
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics,prometheus
+        # Production: Only expose essential endpoints (not threaddump, heapdump)
+  
+  endpoint:
+    health:
+      show-details: when-authorized
+      # Production: Only show details to authorized users
