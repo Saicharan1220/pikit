@@ -12,51 +12,251 @@
     <name>Meal Pre-Order and Collect System</name>
     <description>
         LLD implementation demonstrating Observer, State, Strategy, Factory, Builder patterns
-        with thread-safe concurrency and lazy loading — built for MAANG SDE-2 interview prep.
+        with thread-safe concurrency, REST APIs, and production-grade resilience — built for MAANG SDE-2 interview prep.
     </description>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.5</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
 
     <properties>
         <java.version>21</java.version>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <resilience4j.version>2.1.0</resilience4j.version>
     </properties>
 
     <dependencies>
-        <!-- JUnit 5 for unit tests -->
+        <!-- ========== SPRING BOOT STARTERS ========== -->
+        
+        <!-- REST API Support: Provides DispatcherServlet, REST framework -->
         <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>5.10.0</version>
-            <scope>test</scope>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <!-- Decision: Excludes Tomcat default embedded server; allows switching to Undertow if needed -->
         </dependency>
-        <!-- Mockito for mocking repositories in unit tests -->
+
+        <!-- Validation: @Valid, @NotNull, @Email etc. for DTO validation -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+            <!-- Decision: Separates validation concerns from business logic; follows DTO pattern -->
+        </dependency>
+
+        <!-- Actuator: Health checks, metrics endpoint (/actuator/health, /actuator/metrics) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+            <!-- Decision: Production-ready monitoring; MAANG teams expect /health endpoints -->
+        </dependency>
+
+        <!-- Logging with SLF4J + Logback: Structured logging -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-logging</artifactId>
+        </dependency>
+
+        <!-- ========== DATABASE & ORM ========== -->
+        
+        <!-- JPA/Hibernate: ORM for database operations -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+            <!-- Decision: Abstraction over direct SQL; allows easy migration between databases -->
+        </dependency>
+
+        <!-- PostgreSQL Driver: Production-grade relational database -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>42.7.1</version>
+            <scope>runtime</scope>
+            <!-- Decision: PostgreSQL chosen over MySQL for JSONB, better concurrency support -->
+        </dependency>
+
+        <!-- H2 Database: In-memory DB for testing (no external setup needed) -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>test</scope>
+            <!-- Decision: H2 for tests = faster CI/CD, isolated test environment -->
+        </dependency>
+
+        <!-- Flyway: Database migrations (version control for schema) -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+            <!-- Decision: Schema versioning prevents manual migration errors; auditable -->
+        </dependency>
+
+        <!-- ========== RESILIENCE & FAULT TOLERANCE ========== -->
+        
+        <!-- Resilience4j: Circuit Breaker, Retry, Timeout patterns -->
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-spring-boot3</artifactId>
+            <version>${resilience4j.version}</version>
+            <!-- Decision: Prevents cascading failures; MAANG expectation for distributed systems -->
+        </dependency>
+
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-retry</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>io.github.resilience4j</groupId>
+            <artifactId>resilience4j-circuitbreaker</artifactId>
+            <version>${resilience4j.version}</version>
+        </dependency>
+
+        <!-- ========== MONITORING & OBSERVABILITY ========== -->
+        
+        <!-- Micrometer: Metrics collection (Counter, Timer, Gauge) -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+            <!-- Decision: Prometheus format is industry standard; enables /actuator/prometheus endpoint -->
+        </dependency>
+
+        <!-- Spring Cloud Sleuth: Distributed tracing context propagation -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-sleuth</artifactId>
+            <version>3.2.5</version>
+            <!-- Decision: Trace IDs across service calls; essential for debugging microservices -->
+        </dependency>
+
+        <!-- ========== TESTING ========== -->
+        
+        <!-- JUnit 5: Modern testing framework (parameterized tests, better annotations) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+            <!-- Includes: JUnit5, Mockito, AssertJ, Hamcrest -->
+        </dependency>
+
+        <!-- Mockito: Mocking framework for unit tests -->
         <dependency>
             <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <version>5.4.0</version>
+            <artifactId>mockito-inline</artifactId>
+            <version>5.2.1</version>
             <scope>test</scope>
+            <!-- Decision: mockito-inline allows mocking static methods (new ArrayList() etc.) -->
+        </dependency>
+
+        <!-- AssertJ: Fluent assertions (better readability than assertTrue) -->
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <version>3.24.1</version>
+            <scope>test</scope>
+            <!-- Decision: assertThat(list).isNotEmpty().hasSize(3) is more readable -->
+        </dependency>
+
+        <!-- Testcontainers: Docker-based integration tests (PostgreSQL, Redis, etc.) -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>1.19.7</version>
+            <scope>test</scope>
+            <!-- Decision: Tests against real PostgreSQL instance (not H2 quirks) -->
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>1.19.7</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- ========== UTILITY ========== -->
+        
+        <!-- Lombok: Reduces boilerplate (@Getter, @Setter, @EqualsAndHashCode) -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+            <!-- Decision: Less code = fewer bugs; widely used at MAANG companies -->
+        </dependency>
+
+        <!-- Jackson: JSON serialization/deserialization (REST responses) -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <!-- Already included via spring-boot-starter-web -->
+        </dependency>
+
+        <!-- OpenAPI/Springdoc: Auto-generates Swagger documentation from code -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.3.0</version>
+            <!-- Decision: Self-documenting API; /swagger-ui.html shows all endpoints -->
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!-- Spring Boot Maven Plugin: Package as executable JAR -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+
+            <!-- Compiler Plugin: Ensure Java 21 compatibility -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.11.0</version>
+                <configuration>
+                    <source>21</source>
+                    <target>21</target>
+                </configuration>
             </plugin>
+
+            <!-- Surefire: Test execution (JUnit 5 support) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <configuration>
-                    <archive>
-                        <manifest>
-                            <mainClass>com.mealorder.MealOrderApplication</mainClass>
-                        </manifest>
-                    </archive>
-                </configuration>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.1.2</version>
+            </plugin>
+
+            <!-- JaCoCo: Code coverage reporting (target: >80%) -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.11</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
+
 </project>
